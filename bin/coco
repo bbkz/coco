@@ -63,6 +63,9 @@ usage: coco [options]
 environment:
   COCO_NO_UPDATE_CHECK=1     same as --no-update-check
   COCO_UPDATE_REMOTE=<name>  git remote to check for releases (default: origin)
+  COCO_HOST_PORTS=<ports>    host loopback ports reachable as localhost:<port>
+                             in-container, comma-separated (default: 11434, the
+                             ollama port; set empty to disable)
 EOF
 }
 
@@ -346,6 +349,79 @@ if [ "$RUNTIME_BIN" = "podman" ]; then
   PODMAN_ROOTLESS="$("$RUNTIME_BIN" info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" || true
   if [ "$PODMAN_ROOTLESS" = "true" ]; then
     RUN_USERNS_ARGS+=(--userns=keep-id)
+  fi
+fi
+
+# --- host loopback ports ---
+# a coding agent talking to a local LLM server (ollama listens on the
+# host's 127.0.0.1:11434 by default) would otherwise hit the container's
+# own, empty loopback. rootless podman's default network stack, pasta,
+# can forward connections to a loopback port inside the container to the
+# same port on the host's loopback (-T), so "localhost:11434" keeps
+# working literally: no in-container proxy, and ollama stays bound to
+# loopback on the host. gated on rootless podman + a pasta binary podman
+# can actually use: podman >= 5 reports the one it found (also outside
+# PATH, via helper_binaries_dir); older podman lacks that field, so PATH
+# is the fallback. note "pasta" here is a network *mode*, not an entry in
+# `podman network ls` (that only lists bridge networks, i.e. the default
+# "podman"); rootful podman uses that bridge and never pasta.
+# docker and non-pasta podman have no equivalent. there the container
+# gets the host alias instead (host.docker.internal, which docker only
+# adds on request; podman adds host.containers.internal on its own) and
+# OLLAMA_HOST pointed at it, so ollama clients still find the server
+# without configuration. with docker (and rootful podman) that alias is
+# the bridge gateway, which only reaches services bound to a non-loopback
+# address -- i.e. ollama must run with OLLAMA_HOST=0.0.0.0 on the host.
+# COCO_HOST_PORTS is comma-separated ports or ranges (8000-8010); empty
+# disables the whole thing.
+COCO_HOST_PORTS="${COCO_HOST_PORTS-11434}"
+HOST_PORTS=()
+IFS=',' read -r -a HOST_PORT_ITEMS <<< "$COCO_HOST_PORTS"
+for p in "${HOST_PORT_ITEMS[@]+"${HOST_PORT_ITEMS[@]}"}"; do
+  p="${p//[[:space:]]/}"
+  [ -z "$p" ] && continue
+  if ! [[ "$p" =~ ^[0-9]+(-[0-9]+)?$ ]]; then
+    echo "error: COCO_HOST_PORTS: invalid entry '$p' (expected a port like 11434 or a range like 8000-8010)" >&2
+    exit 2
+  fi
+  HOST_PORTS+=("$p")
+done
+PASTA_BIN=""
+if [ "$RUNTIME_BIN" = "podman" ] && [ "${PODMAN_ROOTLESS:-}" = "true" ]; then
+  PASTA_BIN="$("$RUNTIME_BIN" info --format '{{.Host.Pasta.Executable}}' 2>/dev/null)" || PASTA_BIN=""
+  if [ -z "$PASTA_BIN" ] || [ "$PASTA_BIN" = "<no value>" ]; then
+    PASTA_BIN="$(command -v pasta 2>/dev/null || true)"
+  fi
+fi
+RUN_NET_ARGS=()
+if [ "${#HOST_PORTS[@]}" -gt 0 ]; then
+  if [ -n "$PASTA_BIN" ]; then
+    # syntax is mode:opt,opt,... -- a colon after the mode, then one -T
+    # per entry: podman splits the option string on commas into pasta's
+    # argv, so a comma-joined port list would reach pasta as stray
+    # positional arguments (which it reads as a PID to attach to). ranges
+    # contain no comma and pass through as a single argument. (a comma
+    # after "pasta" instead of the colon makes podman look up a *named*
+    # network "pasta", which does not exist.)
+    PASTA_NET="pasta"
+    sep=":"
+    for p in "${HOST_PORTS[@]}"; do
+      PASTA_NET+="${sep}-T,$p"
+      sep=","
+    done
+    RUN_NET_ARGS+=(--network="$PASTA_NET")
+  else
+    HOST_ALIAS="host.containers.internal"
+    if [ "$RUNTIME_BIN" = "docker" ]; then
+      HOST_ALIAS="host.docker.internal"
+      RUN_NET_ARGS+=(--add-host="$HOST_ALIAS:host-gateway")
+    fi
+    for p in "${HOST_PORTS[@]}"; do
+      if [ "$p" = "11434" ]; then
+        RUN_NET_ARGS+=(-e OLLAMA_HOST="http://$HOST_ALIAS:11434")
+        break
+      fi
+    done
   fi
 fi
 
@@ -644,6 +720,7 @@ CONTAINER_NAME="coco-$SLUG"
 exec "$RUNTIME_BIN" run --rm -it \
   --name "$CONTAINER_NAME" \
   "${RUN_USERNS_ARGS[@]+"${RUN_USERNS_ARGS[@]}"}" \
+  "${RUN_NET_ARGS[@]+"${RUN_NET_ARGS[@]}"}" \
   -e TZ="$BUILD_TZ" \
   -e HOME="$HOME" \
   -e TERM="${TERM:-xterm-256color}" \

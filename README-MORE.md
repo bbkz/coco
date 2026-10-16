@@ -35,11 +35,18 @@ coco
 - `XDEBUG_ENABLE` (optional)
 - `COCO_NO_UPDATE_CHECK=1` — same as `--no-update-check`
 - `COCO_UPDATE_REMOTE=<name>` — remote to check (default `origin`)
+- `COCO_HOST_PORTS=<ports>` — host loopback ports reachable as `localhost:<port>` in-container; comma-separated ports/ranges (default `11434`, empty disables)
 
 ## Mount path — why
 - project mounted at same absolute host path → tool caches (claude-mem, `.git` worktrees, LSP) stay valid both sides
 - host paths unique → agent trust-lists don't confuse different projects
 - container name still gets 6-char hash of full path (Docker needs unique names, limited chars)
+
+## Host services (ollama)
+- `localhost:11434` in-container reaches the host's `localhost:11434` (ollama's default), so agents configured for a local ollama just work
+- rootless podman with pasta (auto-detected: the binary `podman info` reports, else `pasta` on PATH): pasta forwards the port container-loopback → host-loopback (`--network=pasta:-T,11434`); ollama can stay bound to `127.0.0.1` on the host. `pasta` is a network *mode*, it never shows up in `podman network ls` (that only lists bridges like the default `podman`)
+- docker / rootful podman: no loopback forwarding; container gets `host.docker.internal` / `host.containers.internal` and `OLLAMA_HOST` pointing at it — that alias is the bridge gateway, so ollama must listen on a non-loopback address (`OLLAMA_HOST=0.0.0.0` on the host)
+- other ports: `COCO_HOST_PORTS=11434,8000-8010`; `COCO_HOST_PORTS=` turns it off
 
 ## Coding agents
 - first run: interactive checklist picks agents (0+), saved to `.coco/config` as `AGENTS=claude,codex,...`
