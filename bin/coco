@@ -380,7 +380,7 @@ BUILD_TAGS=(-t "$IMAGE")
 [ -n "$COCO_VERSION" ] && BUILD_TAGS+=(-t "$IMAGE_REPO:$COCO_VERSION")
 
 # an explicit `--rebuild` is the user's signal to also refresh the coding
-# agent CLIs (claude, codex, gemini-cli, cursor): they're installed unpinned
+# agent CLIs (claude, codex, gemini-cli, cursor, opencode): they're installed unpinned
 # in the Dockerfile, so a same-Dockerfile rebuild would otherwise just reuse
 # Docker's cached npm-install layer forever. A passive hash-triggered rebuild
 # (Dockerfile/VERSION actually changed) does NOT bust this -- that already
@@ -472,7 +472,7 @@ fi
 # --- agent selection ---
 # (plain case statement instead of an associative array: macOS ships bash 3.2
 # as /bin/bash, which has no associative array support)
-AGENT_NAMES=(claude codex copilot cursor gemini)
+AGENT_NAMES=(claude codex copilot cursor gemini opencode)
 agent_mounts() {
   case "$1" in
     # .claude.json is intentionally NOT bind-mounted directly: it lives inside
@@ -499,6 +499,13 @@ agent_mounts() {
     copilot) echo "$HOME/.config/gh-copilot:$HOME/.config/gh-copilot" ;;
     cursor) echo "$HOME/.cursor:$HOME/.cursor" ;;
     gemini) echo "$HOME/.gemini:$HOME/.gemini" ;;
+    # opencode splits config (opencode.json, agents, commands) and data
+    # (auth.json with provider credentials, session/message store) across
+    # XDG config and data dirs; both need to persist for logins to survive.
+    opencode)
+      echo "$HOME/.config/opencode:$HOME/.config/opencode"
+      echo "$HOME/.local/share/opencode:$HOME/.local/share/opencode"
+      ;;
   esac
 }
 
