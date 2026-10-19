@@ -3,7 +3,7 @@
 ## What
 - Docker dev container, mounts `pwd` at same absolute path in-container
 - Base: AlmaLinux 10
-- Agents installed: Claude Code, Codex, Copilot, Cursor, Gemini
+- Agents installed: Claude Code, Codex, Copilot, Cursor, Gemini, OpenCode
 
 ## Install
 ```
@@ -46,13 +46,13 @@ coco
 - first run: interactive checklist picks agents (0+), saved to `.coco/config` as `AGENTS=claude,codex,...`
 - non-tty: falls back to numbered prompt
 - all agent CLIs installed regardless; selection only controls which host config dirs get mounted
-- config paths: `~/.claude`, `~/.codex`, `~/.config/gh-copilot`, `~/.cursor`, `~/.gemini`
+- config paths: `~/.claude`, `~/.codex`, `~/.config/gh-copilot`, `~/.cursor`, `~/.gemini`, `~/.config/opencode` + `~/.local/share/opencode` (opencode keeps auth/sessions in the XDG data dir, config in the XDG config dir)
 - `~/.claude.json` NOT bind-mounted directly (breaks atomic writes); host symlinks it into `~/.claude/claude.json`, container entrypoint recreates matching symlink each start
 - re-run picker: `coco --config`
 
 ## Persistent data
 ```
-global (~/...):     .claude .codex .config/gh-copilot .cursor .gemini
+global (~/...):     .claude .codex .config/gh-copilot .cursor .gemini .config/opencode .local/share/opencode
 project (pwd/.coco/...): cache/pip cache/npm cache/composer bash_history vim
 ```
 - `.coco/` also holds `config`
