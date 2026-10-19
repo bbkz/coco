@@ -40,6 +40,7 @@ coco
 - project mounted at same absolute host path → tool caches (claude-mem, `.git` worktrees, LSP) stay valid both sides
 - host paths unique → agent trust-lists don't confuse different projects
 - container name still gets 6-char hash of full path (Docker needs unique names, limited chars)
+- podman on an SELinux host (Fedora, RHEL): every bind mount gets `:Z` so the container may read/write it; relabels the project dir and agent config dirs with a private container label. Skipped for docker and non-SELinux hosts
 
 ## Coding agents
 - first run: interactive checklist picks agents (0+), saved to `.coco/config` as `AGENTS=claude,codex,...`
