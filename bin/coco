@@ -423,6 +423,16 @@ if [ "${#HOST_PORTS[@]}" -gt 0 ]; then
       fi
     done
   fi
+# SELinux hosts (Fedora, RHEL, ...) label bind mounts off-limits to the
+# container unless the mount carries :Z, which relabels the host path
+# with a private container label. :Z is the right choice over :z here
+# since every mount is per-project or per-user and never shared between
+# running containers. gated on podman + an active SELinux (the enforce
+# node only exists when SELinux is enabled and mounted): plain docker and
+# SELinux-less hosts get the same unsuffixed mounts as before.
+VOL_OPT=""
+if [ "$RUNTIME_BIN" = "podman" ] && [ -e /sys/fs/selinux/enforce ]; then
+  VOL_OPT=":Z"
 fi
 
 # handled before any .coco/ dir creation below: --cleanup is not tied to a
@@ -456,7 +466,7 @@ BUILD_TAGS=(-t "$IMAGE")
 [ -n "$COCO_VERSION" ] && BUILD_TAGS+=(-t "$IMAGE_REPO:$COCO_VERSION")
 
 # an explicit `--rebuild` is the user's signal to also refresh the coding
-# agent CLIs (claude, codex, gemini-cli, cursor): they're installed unpinned
+# agent CLIs (claude, codex, gemini-cli, cursor, opencode): they're installed unpinned
 # in the Dockerfile, so a same-Dockerfile rebuild would otherwise just reuse
 # Docker's cached npm-install layer forever. A passive hash-triggered rebuild
 # (Dockerfile/VERSION actually changed) does NOT bust this -- that already
@@ -548,7 +558,7 @@ fi
 # --- agent selection ---
 # (plain case statement instead of an associative array: macOS ships bash 3.2
 # as /bin/bash, which has no associative array support)
-AGENT_NAMES=(claude codex copilot cursor gemini)
+AGENT_NAMES=(claude codex copilot cursor gemini opencode)
 agent_mounts() {
   case "$1" in
     # .claude.json is intentionally NOT bind-mounted directly: it lives inside
@@ -575,6 +585,13 @@ agent_mounts() {
     copilot) echo "$HOME/.config/gh-copilot:$HOME/.config/gh-copilot" ;;
     cursor) echo "$HOME/.cursor:$HOME/.cursor" ;;
     gemini) echo "$HOME/.gemini:$HOME/.gemini" ;;
+    # opencode splits config (opencode.json, agents, commands) and data
+    # (auth.json with provider credentials, session/message store) across
+    # XDG config and data dirs; both need to persist for logins to survive.
+    opencode)
+      echo "$HOME/.config/opencode:$HOME/.config/opencode"
+      echo "$HOME/.local/share/opencode:$HOME/.local/share/opencode"
+      ;;
   esac
 }
 
@@ -696,7 +713,7 @@ for agent in "${SELECTED[@]+"${SELECTED[@]}"}"; do
         continue
       fi
     fi
-    MOUNT_ARGS+=(-v "$host_path:$container_path")
+    MOUNT_ARGS+=(-v "$host_path:$container_path$VOL_OPT")
   done
 done
 
@@ -729,11 +746,11 @@ exec "$RUNTIME_BIN" run --rm -it \
   -e GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-}" \
   -e XDEBUG_ENABLE="${XDEBUG_ENABLE:-0}" \
   -w "$MOUNT_PATH" \
-  -v "$PROJECT_DIR:$MOUNT_PATH" \
-  -v "$COCO_DIR/cache/pip:$HOME/.cache/pip" \
-  -v "$COCO_DIR/cache/npm:$HOME/.cache/npm" \
-  -v "$COCO_DIR/cache/composer:$HOME/.cache/composer" \
-  -v "$COCO_DIR/bash_history:$HOME/.bash_history" \
-  -v "$COCO_DIR/vim:$HOME/.vim" \
+  -v "$PROJECT_DIR:$MOUNT_PATH$VOL_OPT" \
+  -v "$COCO_DIR/cache/pip:$HOME/.cache/pip$VOL_OPT" \
+  -v "$COCO_DIR/cache/npm:$HOME/.cache/npm$VOL_OPT" \
+  -v "$COCO_DIR/cache/composer:$HOME/.cache/composer$VOL_OPT" \
+  -v "$COCO_DIR/bash_history:$HOME/.bash_history$VOL_OPT" \
+  -v "$COCO_DIR/vim:$HOME/.vim$VOL_OPT" \
   "${MOUNT_ARGS[@]+"${MOUNT_ARGS[@]}"}" \
   "$IMAGE"
