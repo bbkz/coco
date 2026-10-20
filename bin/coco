@@ -349,6 +349,18 @@ if [ "$RUNTIME_BIN" = "podman" ]; then
   fi
 fi
 
+# SELinux hosts (Fedora, RHEL, ...) label bind mounts off-limits to the
+# container unless the mount carries :Z, which relabels the host path
+# with a private container label. :Z is the right choice over :z here
+# since every mount is per-project or per-user and never shared between
+# running containers. gated on podman + an active SELinux (the enforce
+# node only exists when SELinux is enabled and mounted): plain docker and
+# SELinux-less hosts get the same unsuffixed mounts as before.
+VOL_OPT=""
+if [ "$RUNTIME_BIN" = "podman" ] && [ -e /sys/fs/selinux/enforce ]; then
+  VOL_OPT=":Z"
+fi
+
 # handled before any .coco/ dir creation below: --cleanup is not tied to a
 # project, and must not litter a stray .coco/ in whatever directory it's
 # run from.
@@ -380,7 +392,7 @@ BUILD_TAGS=(-t "$IMAGE")
 [ -n "$COCO_VERSION" ] && BUILD_TAGS+=(-t "$IMAGE_REPO:$COCO_VERSION")
 
 # an explicit `--rebuild` is the user's signal to also refresh the coding
-# agent CLIs (claude, codex, gemini-cli, cursor, qwen): they're installed unpinned
+# agent CLIs (claude, codex, gemini-cli, cursor, opencode, qwen): they're installed unpinned
 # in the Dockerfile, so a same-Dockerfile rebuild would otherwise just reuse
 # Docker's cached npm-install layer forever. A passive hash-triggered rebuild
 # (Dockerfile/VERSION actually changed) does NOT bust this -- that already
@@ -472,7 +484,7 @@ fi
 # --- agent selection ---
 # (plain case statement instead of an associative array: macOS ships bash 3.2
 # as /bin/bash, which has no associative array support)
-AGENT_NAMES=(claude codex copilot cursor gemini qwen)
+AGENT_NAMES=(claude codex copilot cursor gemini opencode qwen)
 agent_mounts() {
   case "$1" in
     # .claude.json is intentionally NOT bind-mounted directly: it lives inside
@@ -499,6 +511,10 @@ agent_mounts() {
     copilot) echo "$HOME/.config/gh-copilot:$HOME/.config/gh-copilot" ;;
     cursor) echo "$HOME/.cursor:$HOME/.cursor" ;;
     gemini) echo "$HOME/.gemini:$HOME/.gemini" ;;
+    opencode)
+      echo "$HOME/.config/opencode:$HOME/.config/opencode"
+      echo "$HOME/.local/share/opencode:$HOME/.local/share/opencode"
+      ;;
     # qwen-code keeps everything (settings.json, oauth_creds.json, file-history,
     # per-project state) in a single dir, gemini-cli style.
     qwen) echo "$HOME/.qwen:$HOME/.qwen" ;;
@@ -623,7 +639,7 @@ for agent in "${SELECTED[@]+"${SELECTED[@]}"}"; do
         continue
       fi
     fi
-    MOUNT_ARGS+=(-v "$host_path:$container_path")
+    MOUNT_ARGS+=(-v "$host_path:$container_path$VOL_OPT")
   done
 done
 
@@ -655,11 +671,11 @@ exec "$RUNTIME_BIN" run --rm -it \
   -e GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-}" \
   -e XDEBUG_ENABLE="${XDEBUG_ENABLE:-0}" \
   -w "$MOUNT_PATH" \
-  -v "$PROJECT_DIR:$MOUNT_PATH" \
-  -v "$COCO_DIR/cache/pip:$HOME/.cache/pip" \
-  -v "$COCO_DIR/cache/npm:$HOME/.cache/npm" \
-  -v "$COCO_DIR/cache/composer:$HOME/.cache/composer" \
-  -v "$COCO_DIR/bash_history:$HOME/.bash_history" \
-  -v "$COCO_DIR/vim:$HOME/.vim" \
+  -v "$PROJECT_DIR:$MOUNT_PATH$VOL_OPT" \
+  -v "$COCO_DIR/cache/pip:$HOME/.cache/pip$VOL_OPT" \
+  -v "$COCO_DIR/cache/npm:$HOME/.cache/npm$VOL_OPT" \
+  -v "$COCO_DIR/cache/composer:$HOME/.cache/composer$VOL_OPT" \
+  -v "$COCO_DIR/bash_history:$HOME/.bash_history$VOL_OPT" \
+  -v "$COCO_DIR/vim:$HOME/.vim$VOL_OPT" \
   "${MOUNT_ARGS[@]+"${MOUNT_ARGS[@]}"}" \
   "$IMAGE"
