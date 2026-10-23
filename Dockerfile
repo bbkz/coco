@@ -74,6 +74,7 @@ RUN echo "cache-bust: ${COCO_AGENTS_CACHE_BUST}" \
  && npm install -g @anthropic-ai/claude-code \
  && npm install -g @openai/codex \
  && npm install -g @google/gemini-cli \
+ && npm install -g @qwen-code/qwen-code \
  && npm install -g @opencode/cli \
  && (curl -fsSL https://cursor.com/install | bash || true)
 
