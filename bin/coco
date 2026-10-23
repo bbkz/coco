@@ -423,6 +423,7 @@ if [ "${#HOST_PORTS[@]}" -gt 0 ]; then
       fi
     done
   fi
+fi
 # SELinux hosts (Fedora, RHEL, ...) label bind mounts off-limits to the
 # container unless the mount carries :Z, which relabels the host path
 # with a private container label. :Z is the right choice over :z here
