@@ -25,7 +25,7 @@ RUN dnf install -y epel-release \
     python3 python3-pip python3-virtualenv \
     python3.14 python3.14-pip \
     openldap-clients \
-    bash-completion sudo shadow-utils tzdata \
+    bash-completion sudo shadow-utils tzdata socat \
  && dnf clean all \
  && ln -sf /usr/bin/python3.14 /usr/local/bin/python3 \
  && ln -sf /usr/bin/python3.14 /usr/local/bin/python \

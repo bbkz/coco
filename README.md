@@ -39,7 +39,7 @@ pwd/.coco/{cache/pip,cache/npm,cache/composer,bash_history,vim}
 
 Per project: `.coco/config`.
 
-A local **Ollama** on the host is reachable at `localhost:11434` from inside the container (rootless podman). Other ports: `COCO_HOST_PORTS=11434,8080`; see [README-MORE](README-MORE.md#host-services-ollama).
+A local **Ollama** on the host is reachable at `localhost:11434` from inside the container (rootless podman, Docker Desktop; Linux docker needs ollama on the bridge IP). Other ports: `COCO_HOST_PORTS=11434,8080`; see [README-MORE](README-MORE.md#host-services-ollama).
 
 ## License
 

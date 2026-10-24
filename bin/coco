@@ -368,10 +368,11 @@ fi
 # docker and non-pasta podman have no equivalent. there the container
 # gets the host alias instead (host.docker.internal, which docker only
 # adds on request; podman adds host.containers.internal on its own) and
-# OLLAMA_HOST pointed at it, so ollama clients still find the server
-# without configuration. with docker (and rootful podman) that alias is
+# the entrypoint bridges each port container-loopback -> alias over socat,
+# so localhost:<port> works in-container either way. the alias reaches
+# the host's loopback on docker desktop (mac/windows), but on linux it is
 # the bridge gateway, which only reaches services bound to a non-loopback
-# address -- i.e. ollama must run with OLLAMA_HOST=0.0.0.0 on the host.
+# address -- i.e. ollama must listen on the docker0 IP (or 0.0.0.0) there.
 # COCO_HOST_PORTS is comma-separated ports or ranges (8000-8010); empty
 # disables the whole thing.
 COCO_HOST_PORTS="${COCO_HOST_PORTS-11434}"
@@ -416,12 +417,8 @@ if [ "${#HOST_PORTS[@]}" -gt 0 ]; then
       HOST_ALIAS="host.docker.internal"
       RUN_NET_ARGS+=(--add-host="$HOST_ALIAS:host-gateway")
     fi
-    for p in "${HOST_PORTS[@]}"; do
-      if [ "$p" = "11434" ]; then
-        RUN_NET_ARGS+=(-e OLLAMA_HOST="http://$HOST_ALIAS:11434")
-        break
-      fi
-    done
+    RUN_NET_ARGS+=(-e COCO_HOST_ALIAS="$HOST_ALIAS")
+    RUN_NET_ARGS+=(-e COCO_HOST_PORTS="$(IFS=,; echo "${HOST_PORTS[*]}")")
   fi
 fi
 # SELinux hosts (Fedora, RHEL, ...) label bind mounts off-limits to the

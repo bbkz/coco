@@ -46,7 +46,10 @@ coco
 ## Host services (ollama)
 - `localhost:11434` in-container reaches the host's `localhost:11434` (ollama's default), so agents configured for a local ollama just work
 - rootless podman with pasta (auto-detected: the binary `podman info` reports, else `pasta` on PATH): pasta forwards the port container-loopback → host-loopback (`--network=pasta:-T,11434`); ollama can stay bound to `127.0.0.1` on the host. `pasta` is a network *mode*, it never shows up in `podman network ls` (that only lists bridges like the default `podman`)
-- docker / rootful podman: no loopback forwarding; container gets `host.docker.internal` / `host.containers.internal` and `OLLAMA_HOST` pointing at it — that alias is the bridge gateway, so ollama must listen on a non-loopback address (`OLLAMA_HOST=0.0.0.0` on the host)
+- docker / rootful podman: container gets the host alias (`host.docker.internal` / `host.containers.internal`) and the entrypoint bridges each port `localhost:<port>` → alias with `socat`, so in-container `localhost:<port>` works here too
+  - Docker Desktop (macOS, Windows): the alias reaches the host's loopback; ollama can stay on `127.0.0.1`, nothing to configure
+  - Linux docker / rootful podman: the alias is the bridge gateway, which never reaches host `127.0.0.1`. Bind ollama to the bridge IP, narrowest first: `OLLAMA_HOST=172.17.0.1:11434` (docker0 only, invisible to the LAN); `OLLAMA_HOST=0.0.0.0` works too but exposes ollama to every interface — firewall it. `ip -4 addr show docker0` (podman: `podman0`) prints the bridge IP
+  - rootless docker: rootlesskit blocks host loopback by default; `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false` in the daemon's environment lifts that for every container, not per-run — binding ollama to the bridge IP as above is the safer route
 - other ports: `COCO_HOST_PORTS=11434,8000-8010`; `COCO_HOST_PORTS=` turns it off
 
 ## Coding agents

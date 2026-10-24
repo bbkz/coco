@@ -21,7 +21,7 @@ fi
 # auto-creates bind-mount parent dirs but doesn't guarantee ownership, so
 # make sure coco actually owns its home before anything writes into it.
 sudo mkdir -p "$HOME"
-sudo chown -R coco:coco "$HOME"
+sudo chown coco:coco "$HOME"
 
 # ~/.claude is bind-mounted as a directory; ~/.claude.json lives inside it
 # (as claude.json) and is symlinked here, so claude's atomic config writes
@@ -36,6 +36,20 @@ if [ -n "${GIT_AUTHOR_NAME:-}" ]; then
 fi
 if [ -n "${GIT_AUTHOR_EMAIL:-}" ]; then
   git config --global user.email "$GIT_AUTHOR_EMAIL"
+fi
+
+# host loopback ports as localhost:<port>. pasta does this natively for
+# rootless podman; docker and rootful podman only hand out the host alias
+# (bridge gateway, see bin/coco), so bridge each port over socat instead.
+# bind=127.0.0.1 keeps the listeners container-local. stderr dropped: a
+# per-connection "Connection refused" (host service down) would scribble
+# over the agent's TUI.
+if [ -n "${COCO_HOST_ALIAS:-}" ]; then
+  for p in ${COCO_HOST_PORTS//,/ }; do
+    for port in $(seq "${p%-*}" "${p#*-}"); do
+      socat TCP-LISTEN:"$port",bind=127.0.0.1,fork,reuseaddr TCP:"$COCO_HOST_ALIAS:$port" 2>/dev/null &
+    done
+  done
 fi
 
 exec "$@"
